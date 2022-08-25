@@ -14,6 +14,7 @@ const registerResourceCmd = new Command("register-resource")
     .option('--resourceId <address>', `Resource ID to be registered`, constants.ERC20_RESOURCEID)
     .action(async function (args) {
         await setupParentArgs(args, args.parent.parent)
+        log(args, `Args chain id ${args.chainId}`);
 
         const bridgeInstance = new ethers.Contract(args.bridge, constants.ContractABIs.Bridge.abi, args.wallet);
         log(args,`Registering contract ${args.targetContract} with resource ID ${args.resourceId} on handler ${args.handler}`);
@@ -56,6 +57,21 @@ const setBurnCmd = new Command("set-burn")
 
         log(args,`Setting contract ${args.tokenContract} as burnable on handler ${args.handler}`);
         const tx = await bridgeInstance.adminSetBurnable(args.handler, args.tokenContract, { gasPrice: args.gasPrice, gasLimit: args.gasLimit});
+        await waitForTx(args.provider, tx.hash)
+    })
+
+const setETHCmd = new Command("set-eth")
+    .description("Set a token contract as ETH in a handler")
+    .option('--bridge <address>', 'Bridge contract address', constants.BRIDGE_ADDRESS)
+    .option('--handler <address>', 'ERC20 handler contract address', constants.ERC20_HANDLER_ADDRESS)
+    .option('--tokenContract <address>', `Token contract to be registered`, constants.ERC20_ADDRESS)
+    .action(async function (args) {
+        await setupParentArgs(args, args.parent.parent)
+        log(args, `Args chain id ${args.chainId}`);
+        const bridgeInstance = new ethers.Contract(args.bridge, constants.ContractABIs.Bridge.abi, args.wallet);
+
+        log(args,`Setting contract ${args.tokenContract} as ETH on handler ${args.handler}`);
+        const tx = await bridgeInstance.adminSetETH(args.handler, args.tokenContract, true, { gasPrice: args.gasPrice, gasLimit: args.gasLimit});
         await waitForTx(args.provider, tx.hash)
     })
 
@@ -118,6 +134,7 @@ const bridgeCmd = new Command("bridge")
 bridgeCmd.addCommand(registerResourceCmd)
 bridgeCmd.addCommand(registerGenericResourceCmd)
 bridgeCmd.addCommand(setBurnCmd)
+bridgeCmd.addCommand(setETHCmd)
 bridgeCmd.addCommand(queryIsBurnCmd)
 bridgeCmd.addCommand(cancelProposalCmd)
 bridgeCmd.addCommand(queryProposalCmd)

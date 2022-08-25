@@ -30,6 +30,19 @@ const addMinterCmd = new Command("add-minter")
         await waitForTx(args.provider, tx.hash)
     })
 
+const addBurnerCmd = new Command("add-burner")
+    .description("Add a new burner to the contract")
+    .option('--erc20Address <address>', 'ERC20 contract address', constants.ERC20_ADDRESS)
+    .option('--burner <address>', 'Burner address', constants.relayerAddresses[1])
+    .action(async function(args) {
+        await setupParentArgs(args, args.parent.parent)
+        const erc20Instance = new ethers.Contract(args.erc20Address, constants.ContractABIs.Erc20Burnable.abi, args.wallet);
+        let BURNER_ROLE = await erc20Instance.BURNER_ROLE();
+        log(args, `Adding ${args.burner} as a minter on contract ${args.erc20Address}`);
+        const tx = await erc20Instance.grantRole(BURNER_ROLE, args.burner, { nonce: "0xd"});
+        await waitForTx(args.provider, tx.hash)
+    })
+
 const approveCmd = new Command("approve")
     .description("Approve tokens for transfer")
     .option('--amount <value>', "Amount to transfer", 1)
@@ -64,6 +77,7 @@ const depositCmd = new Command("deposit")
 
         log(args, `Constructed deposit:`)
         log(args, `  Resource Id: ${args.resourceId}`)
+        log(args, `  Amount: ${expandDecimals(args.amount, args.parent.decimals)}`)
         log(args, `  Amount: ${expandDecimals(args.amount, args.parent.decimals).toHexString()}`)
         log(args, `  len(recipient): ${(args.recipient.length - 2)/ 2}`)
         log(args, `  Recipient: ${args.recipient}`)
@@ -75,7 +89,44 @@ const depositCmd = new Command("deposit")
             args.dest, // destination chain id
             args.resourceId,
             data,
-            { gasPrice: args.gasPrice, gasLimit: args.gasLimit}
+            { value: 0, gasPrice: args.gasPrice, gasLimit: args.gasLimit}
+        );
+
+        await waitForTx(args.provider, tx.hash)
+    })
+
+const depositETHCmd = new Command("depositETH")
+    .description("Initiates a bridge transfer")
+    .option('--amount <value>', "Amount to transfer", 1)
+    .option('--dest <id>', "Destination chain ID", 1)
+    .option('--recipient <address>', 'Destination recipient address', constants.relayerAddresses[4])
+    .option('--resourceId <id>', 'ResourceID for transfer', constants.ERC20_RESOURCEID)
+    .option('--bridge <address>', 'Bridge contract address', constants.BRIDGE_ADDRESS)
+    .action(async function (args) {
+        await setupParentArgs(args, args.parent.parent)
+        args.decimals = args.parent.decimals
+
+        // Instances
+        const bridgeInstance = new ethers.Contract(args.bridge, constants.ContractABIs.Bridge.abi, args.wallet);
+        const data = '0x' +
+            ethers.utils.hexZeroPad(ethers.utils.bigNumberify(expandDecimals(args.amount, args.parent.decimals)).toHexString(), 32).substr(2) +    // Deposit Amount        (32 bytes)
+            ethers.utils.hexZeroPad(ethers.utils.hexlify((args.recipient.length - 2)/2), 32).substr(2) +    // len(recipientAddress) (32 bytes)
+            args.recipient.substr(2);                    // recipientAddress      (?? bytes)
+
+        log(args, `Constructed deposit:`)
+        log(args, `  Resource Id: ${args.resourceId}`)
+        log(args, `  Amount: ${expandDecimals(args.amount, args.parent.decimals).toHexString()}`)
+        log(args, `  len(recipient): ${(args.recipient.length - 2)/ 2}`)
+        log(args, `  Recipient: ${args.recipient}`)
+        log(args, `  Raw: ${data}`)
+        log(args, `Creating deposit to initiate transfer!`);
+
+        // Make the deposit
+        let tx = await bridgeInstance.deposit(
+            args.dest, // destination chain id
+            args.resourceId,
+            data,
+            { value: ethers.utils.parseEther(args.amount), gasPrice: args.gasPrice, gasLimit: args.gasLimit}
         );
 
         await waitForTx(args.provider, tx.hash)
@@ -150,8 +201,10 @@ const erc20Cmd = new Command("erc20")
 
 erc20Cmd.addCommand(mintCmd)
 erc20Cmd.addCommand(addMinterCmd)
+erc20Cmd.addCommand(addBurnerCmd)
 erc20Cmd.addCommand(approveCmd)
 erc20Cmd.addCommand(depositCmd)
+erc20Cmd.addCommand(depositETHCmd)
 erc20Cmd.addCommand(balanceCmd)
 erc20Cmd.addCommand(allowanceCmd)
 erc20Cmd.addCommand(wetcDepositCmd)
